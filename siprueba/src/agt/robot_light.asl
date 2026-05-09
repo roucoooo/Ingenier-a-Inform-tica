@@ -98,11 +98,11 @@ shelf_location("shelf_9",  14, 10).
     query_location(MeStr); .wait(50);
     ?location(MeStr, CX, CY);
     if (CX == TX & CY == TY) {
-        true; // Hemos llegado a la meta
+        .print("Destino alcanzado: (", TX, ",", TY, ")");
     } else {
         move_to(TX, TY);
-        .wait(200); // Velocidad visual del robot (puedes bajar a 100 si quieres que vuelen)
-        !navigate_to(TX, TY); // Recursión para dar el siguiente paso
+        .wait(200); 
+        !navigate_to(TX, TY); 
     }.
 
 // Si move_to falla (porque está 100% acorralado), espera un segundo y reintenta
@@ -140,7 +140,7 @@ shelf_location("shelf_9",  14, 10).
 // --- 4. GESTIÓN DE ERRORES Y PLANES DE RESPALDO ANTI-CRASHES ---
 +error(Type, Data) : true <- -error(Type, Data).
 
-+!poll_entrance : true <- true.
-+!check_entrance_candidates : true <- true.
-+!try_claim_container(_) : true <- true.
-+!exit_cycle_loop : true <- true.
++!poll_entrance : true <- .wait(10).
++!check_entrance_candidates : true <- .wait(10).
++!try_claim_container(_) : true <- .wait(10).
++!exit_cycle_loop : true <- .wait(10).
