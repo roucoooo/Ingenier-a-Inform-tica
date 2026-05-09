@@ -116,46 +116,58 @@ shelf_location("shelf_9",  14, 10).
     -+state(idle); .abolish(claimed_exit(_)); .abolish(claimed_exit_by_other(_));
     ?home_x(HX); ?home_y(HY); !navigate_to(HX, HY); !!exit_cycle_loop.
 
-// --- NAVEGACIÓN A PRUEBA DE ATASCOS ---
-// --- NAVEGACIÓN MEJORADA ---
+// --- NAVEGACIÓN CORREGIDA Y A PRUEBA DE ATASCOS ---
+
 +!navigate_to(TX, TY) : true <- 
     move_to(TX, TY).
 
-// Plan de recuperación si move_to falla [cite: 28, 133]
+// Plan de recuperación si move_to falla (síncrono, para evitar falsos positivos)
 -!navigate_to(TX, TY) : true <- 
     .print("Movimiento fallido a (", TX, ",", TY, "). Intentando maniobra de desbloqueo...");
-    !random_step; // Moverse a cualquier lado para dejar pasar a otros
-    .wait(1200); 
-    !!navigate_to(TX, TY).
+    !random_step; 
+    .wait(1000); 
+    !navigate_to(TX, TY). 
 
-// Auxiliar para dar un paso al azar y evitar el Deadlock
+// Dar un paso a un lado para evitar Deadlock
 +!random_step : true <-
-    ?x(CurrentX); ?y(CurrentY);
-    // Intenta moverse a una posición adyacente segura
-    ( move_to(CurrentX+1, CurrentY) | 
-      move_to(CurrentX-1, CurrentY) | 
-      move_to(CurrentX, CurrentY+1) | 
-      move_to(CurrentX, CurrentY-1) | 
-      true ).
+    .my_name(Me); .term2string(Me, MeStr);
+    query_location(MeStr); .wait(200);
+    ?location(MeStr, CX, CY);
+    !try_step([pos(CX+1,CY), pos(CX-1,CY), pos(CX,CY+1), pos(CX,CY-1)]).
 
+// Si el paso aleatorio falla, no hacemos nada y dejamos que reintente
+-!random_step : true <- true.
+
++!try_step([]) : true <- true.
++!try_step([pos(X,Y)|Rest]) : true <- move_to(X,Y).
+-!try_step([pos(X,Y)|Rest]) : true <- !try_step(Rest).
+
+// Acercarse al contenedor
 +!navigate_adjacent(CX, CY) : true <-
     !try_adjacent_list(CX, CY, [ pos(CX, CY+1), pos(CX-1, CY), pos(CX+1, CY), pos(CX, CY-1), pos(CX+2, CY), pos(CX, CY+2) ]).
 
 +!try_adjacent_list(CX, CY, [pos(AX, AY) | Rest]) : true <-
-    if (AX >= 0 & AY >= 0) { !navigate_to(AX, AY); } else { !try_adjacent_list(CX, CY, Rest); }.
+    if (AX >= 0 & AY >= 0) { 
+        !navigate_to(AX, AY); 
+    } else { 
+        !try_adjacent_list(CX, CY, Rest); 
+    }.
 
--!try_adjacent_list(CX, CY, [pos(AX, AY) | Rest]) : true <- !try_adjacent_list(CX, CY, Rest).
+-!try_adjacent_list(CX, CY, [pos(AX, AY) | Rest]) : true <- 
+    !try_adjacent_list(CX, CY, Rest).
 
 +!try_adjacent_list(CX, CY, []) : true <- 
-    .print("⏳ Refuerzo pesado esperando turno...");
-    .wait(2500); 
+    .print("⏳ Atascado intentando recoger contenedor. Esperando turno...");
+    .wait(1500); 
     !!navigate_adjacent(CX, CY).
 
+// Ir a la zona de salida
 +!navigate_to_exit_zone : true <-
-    !try_exit_positions([pos(2,0), pos(2,1), pos(1,0), pos(1,1), pos(0,0), pos(0,1)]).
+    !try_exit_positions([pos(0,0), pos(1,0), pos(2,0), pos(0,1), pos(1,1), pos(2,1)]).
 
 +!try_exit_positions([pos(EX, EY) | Rest]) : true <- !navigate_to(EX, EY).
 -!try_exit_positions([pos(EX, EY) | Rest]) : true <- !try_exit_positions(Rest).
+
 +!try_exit_positions([]) : true <- .wait(1500); !!navigate_to_exit_zone.
 
 +error(Type, Data) : true <- -error(Type, Data).
