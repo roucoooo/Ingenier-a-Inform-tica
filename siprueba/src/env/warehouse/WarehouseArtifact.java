@@ -244,36 +244,27 @@ public class WarehouseArtifact extends Environment {
             int ty = (int)((NumberTerm) action.getTerm(1)).solve();
             Robot robot = robots.get(agName);
             if (robot == null) return false;
-            if (outOfBounds(tx, ty) || grid[tx][ty] == CellType.SHELF
-                                    || grid[tx][ty] == CellType.BLOCKED) return false;
 
-            int sleepMs = Math.max(100, 800 / robot.getSpeed());
-            Random rand = new Random();
-            int retries = 0;
+            int cx = robot.getX(), cy = robot.getY();
+            // Si ya estamos en el destino, terminamos
+            if (cx == tx && cy == ty) return true;
 
-            while (robot.getX() != tx || robot.getY() != ty) {
-                int cx = robot.getX(), cy = robot.getY();
-                // Paso greedy: primero X luego Y
-                int nx = cx, ny = cy;
-                if      (cx < tx) nx++;
-                else if (cx > tx) nx--;
-                else if (cy < ty) ny++;
-                else if (cy > ty) ny--;
+            int nx = cx, ny = cy;
 
-                if (outOfBounds(nx, ny) || grid[nx][ny] == CellType.SHELF
-                                        || grid[nx][ny] == CellType.BLOCKED)
-                    return false; // el agente debe replantear
+            // IA de Evasión: Intenta ir en la dirección ideal
+            if      (cx < tx && !isBlocked(cx + 1, cy) && !isOtherRobotAt(cx + 1, cy, agName)) nx++;
+            else if (cx > tx && !isBlocked(cx - 1, cy) && !isOtherRobotAt(cx - 1, cy, agName)) nx--;
+            else if (cy < ty && !isBlocked(cx, cy + 1) && !isOtherRobotAt(cx, cy + 1, agName)) ny++;
+            else if (cy > ty && !isBlocked(cx, cy - 1) && !isOtherRobotAt(cx, cy - 1, agName)) ny--;
+            // Si el frente está bloqueado por otro robot o pared, intenta dar un paso lateral para rodear
+            else if (!isBlocked(cx, cy + 1) && !isOtherRobotAt(cx, cy + 1, agName)) ny++;
+            else if (!isBlocked(cx, cy - 1) && !isOtherRobotAt(cx, cy - 1, agName)) ny--;
+            else if (!isBlocked(cx + 1, cy) && !isOtherRobotAt(cx + 1, cy, agName)) nx++;
+            else if (!isBlocked(cx - 1, cy) && !isOtherRobotAt(cx - 1, cy, agName)) nx--;
+            else return false; // Atrapado en este turno, el agente debe reintentar
 
-                if (isOtherRobotAt(nx, ny, agName)) {
-                    if (++retries > 5) return false; // deadlock -> agente replanifica
-                    Thread.sleep(200 + rand.nextInt(300));
-                    continue;
-                }
-                retries = 0;
-                robot.setPosition(nx, ny);
-                if (view != null) view.update();
-                Thread.sleep(sleepMs);
-            }
+            robot.setPosition(nx, ny);
+            if (view != null) view.update();
             return true;
         } catch (Exception e) { return false; }
     }
@@ -361,22 +352,22 @@ public class WarehouseArtifact extends Environment {
     private boolean doQueryLocation(String agName, Structure action) {
         try {
             String eid = unquote(action.getTerm(0).toString());
+            // IMPORTANTE: Borramos la ubicación vieja del agente para evitar fugas de memoria
+            removePerceptsByUnif(agName, Literal.parseLiteral("location(\""+eid+"\",_,_)"));
+            
             if (robots.containsKey(eid)) {
                 Robot r = robots.get(eid);
-                addPercept(agName, Literal.parseLiteral(
-                    "location(\""+eid+"\","+r.getX()+","+r.getY()+")"));
+                addPercept(agName, Literal.parseLiteral("location(\""+eid+"\","+r.getX()+","+r.getY()+")"));
                 return true;
             }
             if (shelves.containsKey(eid)) {
                 Shelf s = shelves.get(eid);
-                addPercept(agName, Literal.parseLiteral(
-                    "location(\""+eid+"\","+s.getX()+","+s.getY()+")"));
+                addPercept(agName, Literal.parseLiteral("location(\""+eid+"\","+s.getX()+","+s.getY()+")"));
                 return true;
             }
             if (containers.containsKey(eid)) {
                 Container c = containers.get(eid);
-                addPercept(agName, Literal.parseLiteral(
-                    "location(\""+eid+"\","+c.getX()+","+c.getY()+")"));
+                addPercept(agName, Literal.parseLiteral("location(\""+eid+"\","+c.getX()+","+c.getY()+")"));
                 return true;
             }
             return false;
@@ -488,5 +479,9 @@ public class WarehouseArtifact extends Environment {
         long e = (System.currentTimeMillis() - startTime) / 1000;
         return String.format("Time: %ds | Processed: %d | Pending: %d | Errors: %d",
             e, totalContainersProcessed, getPendingContainersCount(), totalErrors);
+    }
+
+    private boolean isBlocked(int x, int y) {
+        return outOfBounds(x, y) || grid[x][y] == CellType.SHELF || grid[x][y] == CellType.BLOCKED;
     }
 }

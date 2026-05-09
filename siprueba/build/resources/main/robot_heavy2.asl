@@ -36,126 +36,112 @@ shelf_location("shelf_9",  14, 10).
 
 +claiming(OtherId)[source(OtherRobot)] : true <- +claimed_by_other(OtherId).
 
+// --- 1. TAREAS PRINCIPALES CON WAYPOINTS (PASILLO CENTRAL X=9) ---
 +!execute_store_task(CId, CX, CY) : state(idle) <-
     -+state(working);
     .print("Iniciando recogida de contenedor: ", CId);
-    
-    // 1. Navegar hasta el contenedor en la entrada
     !navigate_adjacent(CX, CY); 
     pickup(CId);
     .print("Contenedor recogido. Buscando estantería...");
-
-    // 2. Selección y localización de estantería
     !select_best_shelf(CId, ShelfId); 
     query_location(ShelfId); 
-    .wait(300); // Esperar a que la creencia location se actualice
+    .wait(300);
     ?location(ShelfId, SX, SY);
+    if (SY > 0) { PasilloY = SY - 1; } else { PasilloY = SY + 1; };
     
-    // 3. CÁLCULO SEGURO DEL PASILLO (Evita coordenadas negativas)
-    if (SY > 0) { 
-        PasilloY = SY - 1; 
-    } else { 
-        PasilloY = SY + 1; 
-    }; 
-    
-    // 4. Entrega del contenedor
-    .print("Navegando a estantería ", ShelfId, " en pos: (", SX, ",", PasilloY, ")");
-    !navigate_to(SX, PasilloY); 
+    .print("Navegando vía pasillo principal (X=9) hacia estantería ", ShelfId);
+    !navigate_to(9, PasilloY);  // WAYPOINT 1: Salir al pasillo central seguro
+    !navigate_to(SX, PasilloY); // WAYPOINT 2: Entrar a la estantería de frente
     drop_at(ShelfId);
     
-    // 5. Finalización y vuelta a casa
     .print("Tarea finalizada. Regresando a base.");
     ?home_x(HX); ?home_y(HY);
-    !navigate_to(HX, HY);
+    !navigate_to(9, PasilloY);  // WAYPOINT 3: Salir de la estantería al pasillo
+    !navigate_to(9, HY);        // WAYPOINT 4: Alinear con la coordenada Y de casa
+    !navigate_to(HX, HY);       // WAYPOINT 5: Volver a casa
     -+state(idle);
     !!poll_entrance.
 
-+!select_best_shelf(CId, BestShelf) : true <-
-    !query_all_shelves; .wait(500);
-    .findall(cand(OccW, SId), (shelf_info(SId, _, _, MaxW, MaxVol, CurW, CurVol) & container_info(CId, CW, CH, CWeight, _, _, _, _) & (CurW + CWeight) <= MaxW & (CurVol + CW*CH) <= MaxVol & OccW = CurW/MaxW), Candidates);
-    .sort(Candidates, Sorted);
-    if (.length(Sorted) > 0) { .nth(0, Sorted, cand(_, BestShelf)); } else { BestShelf = "shelf_9"; };
-    .abolish(shelf_info(_,_,_,_,_,_,_)).
-
-+!query_all_shelves : true <-
-    .abolish(shelf_info(_,_,_,_,_,_,_));
-    !query_shelf_loop(["shelf_1","shelf_2","shelf_3","shelf_4","shelf_5","shelf_6","shelf_7","shelf_8","shelf_9"]).
-
-+!query_shelf_loop([]) : true <- true.
-+!query_shelf_loop([S|Rest]) : true <- query_shelf_info(S); .wait(100); !query_shelf_loop(Rest).
-
-+deadline_active(Type, SD, LD)[source(scheduler)] : true <-
-    -+autonomous_mode(Type); -+deadline_long(LD); .abolish(claimed_by_other(_));
-    if (Type \== none & state(idle)) { !!exit_cycle_loop; }.
-
-+!exit_cycle_loop : autonomous_mode(Type) & Type \== none & state(idle) <-
-    .time(H, M, S); Now = (H * 3600) + (M * 60) + S; ?deadline_long(LD);
-    if (Now < LD) { !find_and_deliver(Type); } else { -+autonomous_mode(none); !!poll_entrance; }.
-+!exit_cycle_loop : autonomous_mode(none) <- !!poll_entrance.
-
-+!find_and_deliver(Type) : state(idle) <-
-    query_containers_stored(Type); .wait(500);
-    .findall(cand(CId, SId), container_stored(CId, SId, Type), Candidates);
-    if (.length(Candidates) > 0) {
-        .nth(0, Candidates, cand(CId, SId)); .broadcast(tell, claiming_exit(CId)); .wait(700);
-        if (not claimed_exit_by_other(CId)) { +claimed_exit(CId); !deliver_to_exit(CId, SId);
-        } else { .wait(1000); !!exit_cycle_loop; };
-    } else { .wait(4000); !!exit_cycle_loop; }.
-
-+claiming_exit(OtherId)[source(OtherRobot)] : true <- +claimed_exit_by_other(OtherId).
-
 +!deliver_to_exit(CId, SId) : state(idle) <-
     -+state(working); 
-    query_location(SId); .wait(200); ?location(SId, SX, SY); PasilloY = SY - 1;
-    !navigate_to(SX, PasilloY); pickup(CId); !navigate_to_exit_zone; drop_at_exit;
-    .send(scheduler, tell, container_delivered_ok(CId, "any")); .send(supervisor, tell, container_delivered_exit(CId, robot_heavy2));
-    ?home_x(HX); ?home_y(HY); !navigate_to(HX, HY); -+state(idle);
-    .abolish(claimed_exit(_)); .abolish(claimed_exit_by_other(_)); .abolish(container_stored(CId,_,_)); !!exit_cycle_loop.
+    query_location(SId); .wait(200);
+    ?location(SId, SX, SY); PasilloY = SY - 1;
+    
+    !navigate_to(9, PasilloY);  // WAYPOINT 1
+    !navigate_to(SX, PasilloY); // WAYPOINT 2
+    pickup(CId); 
+    
+    !navigate_to(9, PasilloY);  // WAYPOINT 3
+    !navigate_to_exit_zone; 
+    drop_at_exit;
+    
+    .my_name(Me);
+    .send(scheduler, tell, container_delivered_ok(CId, "any"));
+    .send(supervisor, tell, container_delivered_exit(CId, Me));
+    
+    ?home_x(HX); ?home_y(HY); 
+    !navigate_to(9, HY); 
+    !navigate_to(HX, HY); 
+    -+state(idle);
+    .abolish(claimed_exit(_)); .abolish(claimed_exit_by_other(_)); .abolish(container_stored(CId,_,_)); 
+    !!exit_cycle_loop.
 
 -!deliver_to_exit(CId, SId) : true <-
     -+state(idle); .abolish(claimed_exit(_)); .abolish(claimed_exit_by_other(_));
-    ?home_x(HX); ?home_y(HY); !navigate_to(HX, HY); !!exit_cycle_loop.
+    ?home_x(HX); ?home_y(HY); 
+    !navigate_to(9, HY);
+    !navigate_to(HX, HY); 
+    !!exit_cycle_loop.
 
-// --- NAVEGACIÓN A PRUEBA DE ATASCOS ---
-// --- NAVEGACIÓN MEJORADA ---
+// --- 2. NAVEGACIÓN PASO A PASO (NUEVA, PARA QUE VAYAN EN PARALELO) ---
 +!navigate_to(TX, TY) : true <- 
-    move_to(TX, TY).
+    .my_name(Me); .term2string(Me, MeStr);
+    query_location(MeStr); .wait(50);
+    ?location(MeStr, CX, CY);
+    if (CX == TX & CY == TY) {
+        true; // Hemos llegado a la meta
+    } else {
+        move_to(TX, TY);
+        .wait(200); // Velocidad visual del robot (puedes bajar a 100 si quieres que vuelen)
+        !navigate_to(TX, TY); // Recursión para dar el siguiente paso
+    }.
 
-// Plan de recuperación si move_to falla [cite: 28, 133]
+// Si move_to falla (porque está 100% acorralado), espera un segundo y reintenta
 -!navigate_to(TX, TY) : true <- 
-    .print("Movimiento fallido a (", TX, ",", TY, "). Intentando maniobra de desbloqueo...");
-    !random_step; // Moverse a cualquier lado para dejar pasar a otros
-    .wait(1200); 
-    !!navigate_to(TX, TY).
+    .print("Esperando a que se despeje el camino hacia (", TX, ",", TY, ")...");
+    .wait(1000); 
+    !navigate_to(TX, TY).
 
-// Auxiliar para dar un paso al azar y evitar el Deadlock
-+!random_step : true <-
-    ?x(CurrentX); ?y(CurrentY);
-    // Intenta moverse a una posición adyacente segura
-    ( move_to(CurrentX+1, CurrentY) | 
-      move_to(CurrentX-1, CurrentY) | 
-      move_to(CurrentX, CurrentY+1) | 
-      move_to(CurrentX, CurrentY-1) | 
-      true ).
-
+// --- 3. ACERCAMIENTO Y SALIDA ---
 +!navigate_adjacent(CX, CY) : true <-
     !try_adjacent_list(CX, CY, [ pos(CX, CY+1), pos(CX-1, CY), pos(CX+1, CY), pos(CX, CY-1), pos(CX+2, CY), pos(CX, CY+2) ]).
 
 +!try_adjacent_list(CX, CY, [pos(AX, AY) | Rest]) : true <-
-    if (AX >= 0 & AY >= 0) { !navigate_to(AX, AY); } else { !try_adjacent_list(CX, CY, Rest); }.
+    if (AX >= 0 & AY >= 0) { 
+        !navigate_to(AX, AY); 
+    } else { 
+        !try_adjacent_list(CX, CY, Rest); 
+    }.
 
--!try_adjacent_list(CX, CY, [pos(AX, AY) | Rest]) : true <- !try_adjacent_list(CX, CY, Rest).
+-!try_adjacent_list(CX, CY, [pos(AX, AY) | Rest]) : true <- 
+    !try_adjacent_list(CX, CY, Rest).
 
 +!try_adjacent_list(CX, CY, []) : true <- 
-    .print("⏳ Refuerzo pesado esperando turno...");
-    .wait(2500); 
+    .wait(1500); 
     !!navigate_adjacent(CX, CY).
 
 +!navigate_to_exit_zone : true <-
-    !try_exit_positions([pos(2,0), pos(2,1), pos(1,0), pos(1,1), pos(0,0), pos(0,1)]).
+    !try_exit_positions([pos(0,0), pos(1,0), pos(2,0), pos(0,1), pos(1,1), pos(2,1)]).
 
 +!try_exit_positions([pos(EX, EY) | Rest]) : true <- !navigate_to(EX, EY).
 -!try_exit_positions([pos(EX, EY) | Rest]) : true <- !try_exit_positions(Rest).
+
 +!try_exit_positions([]) : true <- .wait(1500); !!navigate_to_exit_zone.
 
+// --- 4. GESTIÓN DE ERRORES Y PLANES DE RESPALDO ANTI-CRASHES ---
 +error(Type, Data) : true <- -error(Type, Data).
+
++!poll_entrance : true <- true.
++!check_entrance_candidates : true <- true.
++!try_claim_container(_) : true <- true.
++!exit_cycle_loop : true <- true.
